@@ -4,6 +4,8 @@ from streamlit_folium import st_folium
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
+st.write("Exemplo de dado carregado:", dados[:1])
+
 st.set_page_config(layout="wide")
 st.title("Mapa em Tempo Real dos Ônibus do Rio")
 
