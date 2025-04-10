@@ -30,7 +30,7 @@ def buscar_onibus():
 dados = buscar_onibus()
 
 # Pegar todas as linhas disponíveis
-linhas_disponiveis = sorted(set(v["codigoLinha"] for v in dados))
+linhas_disponiveis = sorted(set(v.get("codigoLinha") for v in dados if "codigoLinha" in v))
 
 # Seleção de linha(s)
 linhas_selecionadas = st.multiselect(
