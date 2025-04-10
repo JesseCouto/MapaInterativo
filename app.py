@@ -1,77 +1,55 @@
 
 import streamlit as st
-import zipfile
-import os
-import pandas as pd
 import geopandas as gpd
 import folium
-from folium import Map, LayerControl
-from streamlit_folium import st_folium
-from io import BytesIO
+from streamlit_folium import folium_static
 from pathlib import Path
+import zipfile
+import shutil
 
 st.set_page_config(layout="wide")
 st.title("Itinerários de Ônibus do Município do RJ")
 
-CACHE_DIR = Path("gtfs_cache")
-GTFS_ZIP = CACHE_DIR / "gtfs_rj.zip"
-GTFS_DIR = CACHE_DIR / "gtfs_extracted"
+GTFS_DIR = Path("gtfs_data")
+GTFS_ZIP = Path("gtfs_data.zip")
 
-def extrair_gtfs(zip_path):
+def extrair_gtfs(arquivo_zip):
     if GTFS_DIR.exists():
         shutil.rmtree(GTFS_DIR)
-    with zipfile.ZipFile(zip_path, "r") as z:
-        z.extractall(GTFS_DIR)
+    with zipfile.ZipFile(arquivo_zip, 'r') as zip_ref:
+        zip_ref.extractall(GTFS_DIR)
 
-def carregar_dados_gtfs(gtfs_path):
-    trips = pd.read_csv(gtfs_path / "trips.txt")
-    shapes = pd.read_csv(gtfs_path / "shapes.txt")
-    routes = pd.read_csv(gtfs_path / "routes.txt")
+# Interface para escolha do arquivo GTFS
+usar_arquivo_existente = False
+if GTFS_ZIP.exists():
+    usar_arquivo_existente = st.radio(
+        "Deseja usar o último GTFS carregado ou enviar um novo?",
+        ["Usar último arquivo", "Enviar novo arquivo"]
+    ) == "Usar último arquivo"
 
-    merged = pd.merge(trips, routes, on="route_id")
-    shapes_grouped = shapes.groupby("shape_id")
-
-    linhas_geo = []
-
-    for shape_id, shape_data in shapes_grouped:
-        shape_data = shape_data.sort_values(by="shape_pt_sequence")
-        coords = list(zip(shape_data["shape_pt_lon"], shape_data["shape_pt_lat"]))
-        linha = merged[merged["shape_id"] == shape_id].iloc[0]
-        nome = linha["route_short_name"]
-        linhas_geo.append({"route_name": nome, "geometry": coords})
-
-    gdf = gpd.GeoDataFrame(linhas_geo)
-    return gdf
-
-CACHE_DIR.mkdir(exist_ok=True)
-
-opcao = st.radio("Deseja usar o último arquivo GTFS salvo ou carregar um novo?", ["Usar cache", "Fazer upload de novo arquivo"])
-
-if opcao == "Fazer upload de novo arquivo":
-    uploaded_file = st.file_uploader("Faça upload do arquivo .zip contendo os dados GTFS", type=["zip"])
-    if uploaded_file:
-        GTFS_ZIP.write_bytes(uploaded_file.read())
-        st.success("Novo arquivo GTFS carregado com sucesso.")
+if not usar_arquivo_existente:
+    uploaded_file = st.file_uploader("Envie o arquivo .zip com os dados GTFS", type="zip")
+    if uploaded_file is not None:
+        with open(GTFS_ZIP, "wb") as f:
+            f.write(uploaded_file.read())
         extrair_gtfs(GTFS_ZIP)
-elif GTFS_ZIP.exists():
-    st.info("Usando o arquivo GTFS salvo anteriormente.")
-    extrair_gtfs(GTFS_ZIP)
 else:
-    st.error("Nenhum arquivo GTFS encontrado. Por favor, envie um arquivo.")
+    if GTFS_ZIP.exists():
+        extrair_gtfs(GTFS_ZIP)
+    else:
+        st.error("Nenhum arquivo GTFS anterior disponível. Faça o upload de um novo.")
+        st.stop()
+
+# Processamento dos dados GTFS
+try:
+    shapes = gpd.read_file(GTFS_DIR / "shapes.txt")
+    routes = gpd.read_file(GTFS_DIR / "routes.txt")
+    trips = gpd.read_file(GTFS_DIR / "trips.txt")
+except Exception as e:
+    st.error(f"Erro ao ler arquivos do GTFS: {e}")
     st.stop()
 
-try:
-    gdf = carregar_dados_gtfs(GTFS_DIR)
-
-    m = folium.Map(location=[-22.9, -43.2], zoom_start=11)
-    for _, row in gdf.iterrows():
-        folium.PolyLine(
-            locations=[(lat, lon) for lon, lat in row["geometry"]],
-            tooltip=f"Linha {row['route_name']}",
-            color="blue",
-            weight=2,
-        ).add_to(m)
-    folium.LayerControl().add_to(m)
-    st_folium(m, width=1200, height=700)
-except Exception as e:
-    st.error(f"Erro ao processar os dados GTFS: {e}")
+# Exemplo de mapa
+m = folium.Map(location=[-22.9, -43.2], zoom_start=11)
+folium.Marker(location=[-22.9, -43.2], popup="Centro do RJ").add_to(m)
+folium_static(m)
