@@ -1,61 +1,44 @@
 
 import streamlit as st
 import geopandas as gpd
-import folium
-from streamlit_folium import st_folium
-import requests
 import os
-import datetime
+import requests
 
 st.set_page_config(layout="wide")
-st.title("Itinerários de Ônibus do Município do Rio de Janeiro")
+st.title("Mapa Interativo de Linhas de Ônibus do Rio de Janeiro")
 
-# Caminho do arquivo local
-local_file = "onibus_rj.geojson"
+geojson_url = "https://dados.mobilidade.rio/gpsgtfs/gtfs_rio/gtfs_lines.geojson"
+local_path = "onibus_rj.geojson"
 
-# URL dos dados do Data.Rio
-data_url = "https://dados.mobilidade.rio/gis/rio_itinerarios.geojson"
-
-def download_data():
+@st.cache_data(show_spinner=True)
+def baixar_geojson():
     try:
-        response = requests.get(data_url, timeout=10)
-        if response.status_code == 200:
-            with open(local_file, "wb") as f:
-                f.write(response.content)
-            return True
+        response = requests.get(geojson_url)
+        response.raise_for_status()
+        with open(local_path, "wb") as f:
+            f.write(response.content)
     except Exception as e:
-        st.error(f"Erro ao baixar dados do Data.Rio: {e}")
-    return False
+        st.error(f"Erro ao baixar dados: {e}")
 
-def update_if_needed():
-    if not os.path.exists(local_file):
-        st.info("Baixando dados pela primeira vez...")
-        success = download_data()
-        if not success:
-            st.stop()
-    else:
-        mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(local_file))
-        if (datetime.datetime.now() - mod_time).days >= 1:
-            download_data()
+def carregar_dados():
+    if not os.path.exists(local_path):
+        baixar_geojson()
+    try:
+        gdf = gpd.read_file(local_path)
+        return gdf
+    except Exception as e:
+        st.error(f"Erro ao carregar dados: {e}")
+        return None
 
-update_if_needed()
+gdf = carregar_dados()
 
-try:
-    gdf = gpd.read_file(local_file)
-    linhas = gdf["linha"].dropna().unique()
-    linhas_selecionadas = st.multiselect("Selecione as linhas:", sorted(linhas))
-
+if gdf is not None and not gdf.empty:
+    linhas = sorted(gdf["name"].unique())
+    linhas_selecionadas = st.multiselect("Selecione uma ou mais linhas:", linhas)
     if linhas_selecionadas:
-        gdf_filtrado = gdf[gdf["linha"].isin(linhas_selecionadas)]
-
-        m = folium.Map(location=[-22.9, -43.2], zoom_start=11)
-        folium.TileLayer("cartodbpositron").add_to(m)
-
-        for _, row in gdf_filtrado.iterrows():
-            folium.GeoJson(row["geometry"], tooltip=row["linha"]).add_to(m)
-
-        st_folium(m, width=1200, height=600)
+        gdf_filtrado = gdf[gdf["name"].isin(linhas_selecionadas)]
+        st.map(gdf_filtrado)
     else:
-        st.info("Selecione uma ou mais linhas para visualizar no mapa.")
-except Exception as e:
-    st.error(f"Erro ao carregar dados: {e}")
+        st.info("Selecione ao menos uma linha para visualizar o itinerário.")
+else:
+    st.warning("Nenhuma linha carregada.")
