@@ -1,44 +1,55 @@
 
 import streamlit as st
+import pandas as pd
 import geopandas as gpd
-import os
+import folium
+from streamlit_folium import st_folium
+import zipfile
 import requests
+import os
+from io import BytesIO
 
-st.set_page_config(layout="wide")
-st.title("Mapa Interativo de Linhas de Ônibus do Rio de Janeiro")
+st.set_page_config(page_title="Linhas de Ônibus RJ", layout="wide")
+st.title("Linhas de Ônibus - Município do Rio de Janeiro")
 
-geojson_url = "https://dados.mobilidade.rio/gpsgtfs/gtfs_rio/gtfs_lines.geojson"
-local_path = "onibus_rj.geojson"
+# Baixar GTFS do Data.Rio
+gtfs_url = "https://dados.mobilidade.rio/gpsgtfs/gtfs_rio.zip"
+gtfs_zip_path = "gtfs_rio.zip"
 
-@st.cache_data(show_spinner=True)
-def baixar_geojson():
+if not os.path.exists(gtfs_zip_path):
     try:
-        response = requests.get(geojson_url)
-        response.raise_for_status()
-        with open(local_path, "wb") as f:
-            f.write(response.content)
+        r = requests.get(gtfs_url)
+        with open(gtfs_zip_path, "wb") as f:
+            f.write(r.content)
     except Exception as e:
-        st.error(f"Erro ao baixar dados: {e}")
+        st.error(f"Erro ao baixar GTFS: {e}")
 
-def carregar_dados():
-    if not os.path.exists(local_path):
-        baixar_geojson()
-    try:
-        gdf = gpd.read_file(local_path)
-        return gdf
-    except Exception as e:
-        st.error(f"Erro ao carregar dados: {e}")
-        return None
+# Extrair os arquivos shapes.txt e routes.txt
+with zipfile.ZipFile(gtfs_zip_path, "r") as z:
+    shapes_df = pd.read_csv(z.open("shapes.txt"))
+    routes_df = pd.read_csv(z.open("routes.txt"))
 
-gdf = carregar_dados()
+# Agrupar coordenadas por shape_id
+shape_lines = shapes_df.groupby("shape_id").apply(
+    lambda x: [[row['shape_pt_lat'], row['shape_pt_lon']] for _, row in x.sort_values('shape_pt_sequence').iterrows()]
+).reset_index(name="coordinates")
 
-if gdf is not None and not gdf.empty:
-    linhas = sorted(gdf["name"].unique())
-    linhas_selecionadas = st.multiselect("Selecione uma ou mais linhas:", linhas)
-    if linhas_selecionadas:
-        gdf_filtrado = gdf[gdf["name"].isin(linhas_selecionadas)]
-        st.map(gdf_filtrado)
-    else:
-        st.info("Selecione ao menos uma linha para visualizar o itinerário.")
-else:
-    st.warning("Nenhuma linha carregada.")
+# Juntar nomes das linhas pelas rotas
+route_names = routes_df[["route_id", "route_short_name"]]
+shape_lines["route_id"] = shape_lines["shape_id"].str.extract(r'(\d+)', expand=False)
+shape_lines = shape_lines.merge(route_names, on="route_id", how="left")
+shape_lines["route_name"] = shape_lines["route_short_name"].fillna("Sem nome")
+shape_lines.dropna(subset=["coordinates"], inplace=True)
+
+# Interface para seleção
+unique_routes = shape_lines["route_name"].dropna().unique()
+selected_routes = st.multiselect("Selecione uma ou mais linhas:", sorted(unique_routes))
+
+# Mapa
+m = folium.Map(location=[-22.9, -43.2], zoom_start=11)
+
+if selected_routes:
+    for _, row in shape_lines[shape_lines["route_name"].isin(selected_routes)].iterrows():
+        folium.PolyLine(row["coordinates"], color="blue", weight=3).add_to(m)
+
+st_folium(m, width=1000, height=600)
