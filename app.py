@@ -4,10 +4,12 @@ from streamlit_folium import st_folium
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
-with open("dados/viagens.json", "r", encoding="utf-8") as f:
-    dados = json.load(f)
-
-st.write("Exemplo de dado carregado:", dados[:1])
+try:
+    with open("dados/viagens.json", "r", encoding="utf-8") as f:
+        dados = json.load(f)
+    st.write("Exemplo de dado carregado:", dados[:1])
+except Exception as e:
+    st.error(f"Erro ao carregar dados: {e}")
 
 st.set_page_config(layout="wide")
 st.title("Mapa em Tempo Real dos Ônibus do Rio")
