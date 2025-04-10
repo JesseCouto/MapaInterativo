@@ -33,11 +33,15 @@ dados = buscar_onibus()
 linhas_disponiveis = sorted(set(v.get("codigoLinha") for v in dados if "codigoLinha" in v))
 
 # Seleção de linha(s)
-linhas_selecionadas = st.multiselect(
-    "Selecione as linhas que deseja ver no mapa:",
-    options=linhas_disponiveis,
-    default=["422"]
-)
+if linhas_disponiveis:
+    linhas_selecionadas = st.multiselect(
+        "Selecione as linhas para exibir no mapa:",
+        linhas_disponiveis,
+        default=linhas_disponiveis[:1]
+    )
+else:
+    st.warning("Nenhuma linha disponível para exibir no momento.")
+    st.stop()
 
 # Filtrar ônibus por linha selecionada
 onibus_filtrados = [
