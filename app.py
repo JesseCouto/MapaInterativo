@@ -1,55 +1,81 @@
 
 import streamlit as st
-import pandas as pd
 import geopandas as gpd
-import folium
-from streamlit_folium import st_folium
-import zipfile
 import requests
+import zipfile
+import io
 import os
-from io import BytesIO
 
 st.set_page_config(page_title="Linhas de Ônibus RJ", layout="wide")
-st.title("Linhas de Ônibus - Município do Rio de Janeiro")
+st.title("Linhas de Ônibus do Município do Rio de Janeiro")
 
-# Baixar GTFS do Data.Rio
+# Caminho local para cache
+local_zip_path = "gtfs_rio.zip"
+local_geojson_path = "onibus_rj.geojson"
+
+# URL oficial do GTFS
 gtfs_url = "https://dados.mobilidade.rio/gpsgtfs/gtfs_rio.zip"
-gtfs_zip_path = "gtfs_rio.zip"
 
-if not os.path.exists(gtfs_zip_path):
+def baixar_arquivo_gtfs():
     try:
-        r = requests.get(gtfs_url)
-        with open(gtfs_zip_path, "wb") as f:
-            f.write(r.content)
+        st.info("Baixando dados atualizados do Data.Rio...")
+        response = requests.get(gtfs_url)
+        if response.ok:
+            with open(local_zip_path, "wb") as f:
+                f.write(response.content)
+            return True
+        else:
+            st.warning("Não foi possível baixar os dados atualizados. Usando cache local se disponível.")
+            return False
     except Exception as e:
-        st.error(f"Erro ao baixar GTFS: {e}")
+        st.error(f"Erro ao baixar os dados: {e}")
+        return False
 
-# Extrair os arquivos shapes.txt e routes.txt
-with zipfile.ZipFile(gtfs_zip_path, "r") as z:
-    shapes_df = pd.read_csv(z.open("shapes.txt"))
-    routes_df = pd.read_csv(z.open("routes.txt"))
+def extrair_shape_para_geojson(zip_path, geojson_path):
+    try:
+        with zipfile.ZipFile(zip_path, "r") as z:
+            z.extractall("gtfs_temp")
+        shapes_path = os.path.join("gtfs_temp", "shapes.txt")
+        routes_path = os.path.join("gtfs_temp", "routes.txt")
+        trips_path = os.path.join("gtfs_temp", "trips.txt")
 
-# Agrupar coordenadas por shape_id
-shape_lines = shapes_df.groupby("shape_id").apply(
-    lambda x: [[row['shape_pt_lat'], row['shape_pt_lon']] for _, row in x.sort_values('shape_pt_sequence').iterrows()]
-).reset_index(name="coordinates")
+        import pandas as pd
+        shapes = pd.read_csv(shapes_path)
+        routes = pd.read_csv(routes_path)
+        trips = pd.read_csv(trips_path)
 
-# Juntar nomes das linhas pelas rotas
-route_names = routes_df[["route_id", "route_short_name"]]
-shape_lines["route_id"] = shape_lines["shape_id"].str.extract(r'(\d+)', expand=False)
-shape_lines = shape_lines.merge(route_names, on="route_id", how="left")
-shape_lines["route_name"] = shape_lines["route_short_name"].fillna("Sem nome")
-shape_lines.dropna(subset=["coordinates"], inplace=True)
+        # Pega apenas colunas essenciais
+        shapes = shapes.sort_values(["shape_id", "shape_pt_sequence"])
+        linhas = []
 
-# Interface para seleção
-unique_routes = shape_lines["route_name"].dropna().unique()
-selected_routes = st.multiselect("Selecione uma ou mais linhas:", sorted(unique_routes))
+        for shape_id, group in shapes.groupby("shape_id"):
+            coords = list(zip(group["shape_pt_lon"], group["shape_pt_lat"]))
+            linha = {"shape_id": shape_id, "geometry": {"type": "LineString", "coordinates": coords}}
+            linhas.append(linha)
 
-# Mapa
-m = folium.Map(location=[-22.9, -43.2], zoom_start=11)
+        gdf = gpd.GeoDataFrame(linhas)
+        gdf.set_geometry(gpd.GeoSeries.from_wkt(gdf["geometry"].astype(str)), inplace=True)
+        gdf.to_file(geojson_path, driver="GeoJSON")
+        return gdf
+    except Exception as e:
+        st.error(f"Erro ao processar os dados do GTFS: {e}")
+        return None
 
-if selected_routes:
-    for _, row in shape_lines[shape_lines["route_name"].isin(selected_routes)].iterrows():
-        folium.PolyLine(row["coordinates"], color="blue", weight=3).add_to(m)
+# Tenta baixar e atualizar os dados
+if baixar_arquivo_gtfs() or os.path.exists(local_zip_path):
+    gdf = None
+    if not os.path.exists(local_geojson_path):
+        gdf = extrair_shape_para_geojson(local_zip_path, local_geojson_path)
+    else:
+        try:
+            gdf = gpd.read_file(local_geojson_path)
+        except:
+            gdf = extrair_shape_para_geojson(local_zip_path, local_geojson_path)
 
-st_folium(m, width=1000, height=600)
+    if gdf is not None and not gdf.empty:
+        st.success("Dados carregados com sucesso!")
+        st.map(gdf)
+    else:
+        st.warning("Nenhuma linha encontrada para exibir.")
+else:
+    st.error("Não foi possível carregar os dados do GTFS.")
