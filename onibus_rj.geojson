@@ -1,19 +1,6 @@
 
 {
   "type": "FeatureCollection",
-  "features": [
-    {
-      "type": "Feature",
-      "properties": {
-        "linha": "123"
-      },
-      "geometry": {
-        "type": "LineString",
-        "coordinates": [
-          [-43.2, -22.9],
-          [-43.21, -22.91]
-        ]
-      }
-    }
-  ]
+  "features": []
 }
+
