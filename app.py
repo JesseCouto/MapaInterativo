@@ -1,35 +1,36 @@
+
 import streamlit as st
-import pandas as pd
 import requests
+import folium
+from streamlit_folium import st_folium
 
-st.title("Monitoramento em tempo real - Ônibus RJ")
+st.set_page_config(layout="wide")
+st.title("Rotas de Ônibus do Rio de Janeiro (via OpenStreetMap)")
 
-# URL com os dados em tempo real
-url = "http://www.consorcio.rio/baixar/VehiclesPositions.json"
+# Overpass API Query
+query = """
+[out:json][timeout:25];
+area["name"="Rio de Janeiro"]->.searchArea;
+(
+  relation["route"="bus"](area.searchArea);
+);
+out geom;
+"""
 
-# Fazer a requisição dos dados
-try:
-    response = requests.get(url)
+st.write("Carregando dados de rotas de ônibus do OpenStreetMap...")
+url = "http://overpass-api.de/api/interpreter"
+response = requests.post(url, data={"data": query})
+
+if response.status_code != 200:
+    st.error("Erro ao buscar dados do OpenStreetMap.")
+else:
     data = response.json()
+    m = folium.Map(location=[-22.9068, -43.1729], zoom_start=12)
 
-    # Transformar os dados em DataFrame
-    df = pd.DataFrame(data)
+    for element in data["elements"]:
+        if "geometry" in element:
+            coords = [(point["lat"], point["lon"]) for point in element["geometry"]]
+            folium.PolyLine(coords, color="blue", weight=2).add_to(m)
 
-    # Renomear para uso no mapa
-    df = df.rename(columns={"Latitude": "lat", "Longitude": "lon"})
-
-    # Selecionar linha
-    linhas = df["CodigoLinha"].unique()
-    linha_escolhida = st.selectbox("Escolha a linha:", sorted(linhas))
-
-    df_linha = df[df["CodigoLinha"] == linha_escolhida]
-
-    # Mostrar dados no mapa
-    st.map(df_linha[["lat", "lon"]])
-
-    # Mostrar tabela opcional
-    if st.checkbox("Mostrar dados brutos"):
-        st.dataframe(df_linha)
-
-except Exception as e:
-    st.error("Erro ao carregar os dados: " + str(e))
+    st.write(f"Total de rotas carregadas: {len(data['elements'])}")
+    st_data = st_folium(m, width=1200, height=700)
