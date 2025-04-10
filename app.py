@@ -2,15 +2,13 @@ import requests
 import folium
 from streamlit_folium import st_folium
 import streamlit as st
-from streamlit.runtime.scriptrunner import RerunException
-from streamlit.runtime.runtime import Runtime
+from streamlit_autorefresh import st_autorefresh
 
 st.set_page_config(layout="wide")
 st.title("Mapa em Tempo Real dos Ônibus do Rio")
 
 # Auto refresh a cada 30 segundos
-st.experimental_set_query_params()
-st_autorefresh = st.experimental_rerun
+st_autorefresh(interval=30_000, key="auto_refresh")
 st.caption("Atualiza a cada 30 segundos automaticamente")
 
 # Função para buscar dados da API pública
