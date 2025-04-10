@@ -1,54 +1,28 @@
 import streamlit as st
-import json
-import folium
-from streamlit_folium import st_folium
+import pandas as pd
 
-# Tentando carregar os dados
-try:
-    with open("dados/viagens.json", "r", encoding="utf-8") as f:
-        dados = json.load(f)
-    st.write("Exemplo de dado carregado:", dados[:1])
-except Exception as e:
-    st.error(f"Erro ao carregar dados: {e}")
-    dados = []
+# Simulação dos dados carregados (substitua isso pelo seu carregamento real)
+dados = [
+    {"codigoLinha": "001", "latitude": -22.9, "longitude": -43.2, "hora": "12:00"},
+    {"codigoLinha": "002", "latitude": -22.91, "longitude": -43.21, "hora": "12:10"},
+    {"codigoLinha": "001", "latitude": -22.89, "longitude": -43.19, "hora": "12:05"}
+]
 
-# Obter as linhas disponíveis
-linhas_disponiveis = sorted(set(v["codigoLinha"] for v in dados))
-linha_selecionada = st.multiselect("Selecione uma ou mais linhas:", linhas_disponiveis)
+df = pd.DataFrame(dados)
 
-# Filtrar dados com base nas linhas selecionadas
-dados_filtrados = [v for v in dados if v["codigoLinha"] in linha_selecionada]
+st.title("Visualização de Linhas de Ônibus")
 
-# Criar o mapa
-m = folium.Map(location=[-22.9, -43.2], zoom_start=12)
+# Mostrar checkbox para exibir exemplo de dados
+if st.checkbox("Mostrar exemplo de dado carregado"):
+    st.markdown("**Exemplo de dado carregado:**")
+    st.json(df.iloc[0].to_dict())
 
-# Adicionar marcadores
-for viagem in dados_filtrados:
-    folium.Marker(
-        location=[viagem["latitude"], viagem["longitude"]],
-        popup=f"Linha: {viagem['codigoLinha']} - Hora: {viagem['hora']}",
-        icon=folium.Icon(color="blue", icon="bus", prefix="fa")
-    ).add_to(m)
+# Seleção de linha
+linhas_disponiveis = df["codigoLinha"].unique()
+linha_selecionada = st.selectbox("Selecione uma linha:", linhas_disponiveis)
 
-# Exibir mapa no Streamlit
-st_folium(m, width=700)
+# Filtrando os dados pela linha selecionada
+df_filtrado = df[df["codigoLinha"] == linha_selecionada]
 
-# Filtrar dados com base nas linhas selecionadas
-dados_filtrados = [v for v in dados if v["codigoLinha"] in linha_selecionada]
-
-# Exibir os dados filtrados para depuração
-st.write("Dados filtrados:", dados_filtrados)
-
-# Criar o mapa
-m = folium.Map(location=[-22.9, -43.2], zoom_start=12)
-
-# Adicionar marcadores ao mapa
-for viagem in dados_filtrados:
-    folium.Marker(
-        location=[viagem["latitude"], viagem["longitude"]],
-        popup=f"Linha: {viagem['codigoLinha']} - Hora: {viagem['hora']}",
-        icon=folium.Icon(color="blue", icon="bus", prefix="fa")
-    ).add_to(m)
-
-# Exibir o mapa no Streamlit
-st_folium(m, width=700)
+# Exibindo o mapa com os dados filtrados
+st.map(df_filtrado.rename(columns={"latitude": "lat", "longitude": "lon"}))
