@@ -5,30 +5,30 @@ import folium
 from streamlit_folium import st_folium
 
 st.set_page_config(layout="wide")
-st.title("Mapa Interativo - Linhas de Ônibus OSM (RJ)")
+st.title("Mapa Interativo - Linhas de Ônibus do Rio de Janeiro")
 
 # Carrega os dados GeoJSON
 gdf = gpd.read_file("dados/onibus_osm_rj.geojson")
 
-# Extrai os nomes das linhas
-linhas_disponiveis = sorted(gdf["name"].dropna().unique())
+# Lista de linhas únicas
+linhas_disponiveis = gdf['name'].unique().tolist()
 
-# Interface para seleção múltipla
-linhas_selecionadas = st.multiselect(
-    "Selecione uma ou mais linhas para visualizar no mapa:",
-    linhas_disponiveis,
-    default=linhas_disponiveis[:1]
-)
-
-# Filtra os dados conforme seleção
-gdf_filtrado = gdf[gdf["name"].isin(linhas_selecionadas)]
+# Seleção de linhas
+linhas_selecionadas = st.multiselect("Selecione uma ou mais linhas de ônibus:", sorted(linhas_disponiveis))
 
 # Cria o mapa
-m = folium.Map(location=[-22.9, -43.2], zoom_start=11)
+m = folium.Map(location=[-22.9, -43.2], zoom_start=12)
 
-# Adiciona os itinerários filtrados no mapa
-for _, row in gdf_filtrado.iterrows():
-    folium.GeoJson(row["geometry"], tooltip=row["name"]).add_to(m)
+# Filtra e plota as linhas selecionadas
+if linhas_selecionadas:
+    gdf_filtrado = gdf[gdf['name'].isin(linhas_selecionadas)]
+    for _, row in gdf_filtrado.iterrows():
+        folium.PolyLine(locations=[(coord[1], coord[0]) for coord in row['geometry'].coords],
+                        tooltip=row['name'],
+                        color='blue',
+                        weight=4).add_to(m)
+else:
+    st.info("Selecione uma ou mais linhas para visualizar o itinerário no mapa.")
 
-# Mostra o mapa no Streamlit
-st_data = st_folium(m, width=800, height=600)
+# Exibe o mapa
+st_folium(m, width=1000, height=600)
