@@ -1,28 +1,35 @@
 import streamlit as st
 import pandas as pd
+import requests
 
-# Simulação dos dados carregados (substitua isso pelo seu carregamento real)
-dados = [
-    {"codigoLinha": "001", "latitude": -22.9, "longitude": -43.2, "hora": "12:00"},
-    {"codigoLinha": "002", "latitude": -22.91, "longitude": -43.21, "hora": "12:10"},
-    {"codigoLinha": "001", "latitude": -22.89, "longitude": -43.19, "hora": "12:05"}
-]
+st.title("Monitoramento em tempo real - Ônibus RJ")
 
-df = pd.DataFrame(dados)
+# URL com os dados em tempo real
+url = "http://www.consorcio.rio/baixar/VehiclesPositions.json"
 
-st.title("Visualização de Linhas de Ônibus")
+# Fazer a requisição dos dados
+try:
+    response = requests.get(url)
+    data = response.json()
 
-# Mostrar checkbox para exibir exemplo de dados
-if st.checkbox("Mostrar exemplo de dado carregado"):
-    st.markdown("**Exemplo de dado carregado:**")
-    st.json(df.iloc[0].to_dict())
+    # Transformar os dados em DataFrame
+    df = pd.DataFrame(data)
 
-# Seleção de linha
-linhas_disponiveis = df["codigoLinha"].unique()
-linha_selecionada = st.selectbox("Selecione uma linha:", linhas_disponiveis)
+    # Renomear para uso no mapa
+    df = df.rename(columns={"Latitude": "lat", "Longitude": "lon"})
 
-# Filtrando os dados pela linha selecionada
-df_filtrado = df[df["codigoLinha"] == linha_selecionada]
+    # Selecionar linha
+    linhas = df["CodigoLinha"].unique()
+    linha_escolhida = st.selectbox("Escolha a linha:", sorted(linhas))
 
-# Exibindo o mapa com os dados filtrados
-st.map(df_filtrado.rename(columns={"latitude": "lat", "longitude": "lon"}))
+    df_linha = df[df["CodigoLinha"] == linha_escolhida]
+
+    # Mostrar dados no mapa
+    st.map(df_linha[["lat", "lon"]])
+
+    # Mostrar tabela opcional
+    if st.checkbox("Mostrar dados brutos"):
+        st.dataframe(df_linha)
+
+except Exception as e:
+    st.error("Erro ao carregar os dados: " + str(e))
