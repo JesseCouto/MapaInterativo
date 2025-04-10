@@ -1,7 +1,5 @@
 streamlit
 streamlit-folium
-geopandas
 pandas
-shapely
+geopandas
 folium
-
