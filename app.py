@@ -1,50 +1,34 @@
 
 import streamlit as st
-import requests
+import geopandas as gpd
 import folium
 from streamlit_folium import st_folium
 
 st.set_page_config(layout="wide")
-st.title("Rotas de Ônibus do Rio de Janeiro (via OpenStreetMap)")
+st.title("Mapa Interativo - Linhas de Ônibus OSM (RJ)")
 
-# Overpass API Query
-query = """
-[out:json][timeout:25];
-area["name"="Rio de Janeiro"]->.searchArea;
-(
-  relation["route"="bus"](area.searchArea);
-);
-out geom;
-"""
+# Carrega os dados GeoJSON
+gdf = gpd.read_file("dados/onibus_osm_rj.geojson")
 
-st.write("Conectando ao OpenStreetMap...")
+# Extrai os nomes das linhas
+linhas_disponiveis = sorted(gdf["name"].dropna().unique())
 
-try:
-    url = "http://overpass-api.de/api/interpreter"
-    response = requests.post(url, data={"data": query}, timeout=60)
+# Interface para seleção múltipla
+linhas_selecionadas = st.multiselect(
+    "Selecione uma ou mais linhas para visualizar no mapa:",
+    linhas_disponiveis,
+    default=linhas_disponiveis[:1]
+)
 
-    if response.status_code != 200:
-        st.error(f"Erro na resposta do servidor: {response.status_code}")
-        st.stop()
+# Filtra os dados conforme seleção
+gdf_filtrado = gdf[gdf["name"].isin(linhas_selecionadas)]
 
-    data = response.json()
-    if "elements" not in data or len(data["elements"]) == 0:
-        st.warning("Nenhuma rota encontrada para o município do Rio de Janeiro.")
-        st.stop()
+# Cria o mapa
+m = folium.Map(location=[-22.9, -43.2], zoom_start=11)
 
-    m = folium.Map(location=[-22.9068, -43.1729], zoom_start=12)
+# Adiciona os itinerários filtrados no mapa
+for _, row in gdf_filtrado.iterrows():
+    folium.GeoJson(row["geometry"], tooltip=row["name"]).add_to(m)
 
-    for element in data["elements"]:
-        if "geometry" in element:
-            coords = [(point["lat"], point["lon"]) for point in element["geometry"]]
-            folium.PolyLine(coords, color="blue", weight=2).add_to(m)
-
-    st.success(f"Total de rotas carregadas: {len(data['elements'])}")
-    st_folium(m, width=1200, height=700)
-
-except requests.exceptions.Timeout:
-    st.error("Tempo de resposta excedido. Tente novamente em alguns instantes.")
-except requests.exceptions.ConnectionError:
-    st.error("Erro de conexão. Verifique sua internet ou tente mais tarde.")
-except Exception as e:
-    st.error(f"Erro inesperado: {e}")
+# Mostra o mapa no Streamlit
+st_data = st_folium(m, width=800, height=600)
