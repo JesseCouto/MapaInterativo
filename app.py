@@ -4,6 +4,9 @@ from streamlit_folium import st_folium
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
 
+with open("dados/viagens.json", "r", encoding="utf-8") as f:
+    dados = json.load(f)
+
 st.write("Exemplo de dado carregado:", dados[:1])
 
 st.set_page_config(layout="wide")
