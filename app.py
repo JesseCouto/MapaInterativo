@@ -32,14 +32,10 @@ if gtfs:
     stops = gtfs["stops.txt"]
     stop_times = gtfs["stop_times.txt"]
 
-    # Junta trips com routes para mostrar nome das linhas
     trips_routes = trips.merge(routes, on="route_id")
-
-    # Seleciona dados das linhas
     linhas = trips_routes[["route_id", "route_short_name", "route_long_name", "trip_id", "shape_id"]].drop_duplicates()
-    linhas["linha_nome"] = linhas["route_short_name"].fillna('') + " - " + linhas["route_long_name"].fillna('')
+    linhas["linha_nome"] = linhas["route_short_name"].fillna('').astype(str) + " - " + linhas["route_long_name"].fillna('').astype(str)
 
-    # Menu lateral
     st.sidebar.title("🔍 Filtros")
     linha_escolhida = st.sidebar.selectbox("Selecione uma linha:", linhas["linha_nome"].unique())
     linha_dados = linhas[linhas["linha_nome"] == linha_escolhida].iloc[0]
@@ -48,14 +44,11 @@ if gtfs:
 
     st.subheader(f"👉 Linha Selecionada: {linha_escolhida}")
 
-    # Trajeto
     shape_data = shapes[shapes["shape_id"] == shape_id].sort_values("shape_pt_sequence")
-
-    # Paradas dessa viagem
     paradas_viagem = stop_times[stop_times["trip_id"] == trip_id].merge(stops, on="stop_id")
 
-    # Mapa
     if not shape_data.empty:
+        path = shape_data[["shape_pt_lon", "shape_pt_lat"]].values.tolist()
         st.pydeck_chart(pdk.Deck(
             map_style="mapbox://styles/mapbox/light-v9",
             initial_view_state=pdk.ViewState(
@@ -67,8 +60,8 @@ if gtfs:
             layers=[
                 pdk.Layer(
                     "PathLayer",
-                    data=shape_data,
-                    get_path="[['shape_pt_lon', 'shape_pt_lat']]",
+                    data=[{"path": path}],
+                    get_path="path",
                     get_color=[0, 100, 250],
                     width_scale=5,
                     width_min_pixels=3,
@@ -94,7 +87,8 @@ if gtfs:
 
     with st.expander("🗂 Exportar dados da linha"):
         csv = paradas_viagem.to_csv(index=False).encode("utf-8")
-        st.download_button("🔽 Baixar CSV de paradas", csv, f"paradas_{linha_escolhida}.csv", "text/csv")
+        nome_arquivo = f"paradas_{linha_escolhida.replace('/', '_').replace(' ', '_')}.csv"
+        st.download_button("🔽 Baixar CSV de paradas", csv, nome_arquivo, "text/csv")
 
 else:
     st.error("Erro ao carregar dados do GTFS.")
