@@ -12,18 +12,39 @@ GTFS_URL = "https://dados.mobilidade.rio/gis/gtfs.zip"
 @st.cache_data
 
 def carregar_dados_gtfs(url):
-    response = requests.get(url)
-    if response.status_code != 200:
-        st.error("Erro ao baixar GTFS.")
+    try:
+        response = requests.get(url)
+        if response.status_code != 200:
+            return None
+
+        z = zipfile.ZipFile(io.BytesIO(response.content))
+        dados = {name: pd.read_csv(z.open(name)) for name in z.namelist() if name.endswith('.txt')}
+        return dados
+    except Exception as e:
         return None
 
-    z = zipfile.ZipFile(io.BytesIO(response.content))
-    dados = {name: pd.read_csv(z.open(name)) for name in z.namelist() if name.endswith('.txt')}
-    return dados
+@st.cache_data
 
-gtfs = carregar_dados_gtfs(GTFS_URL)
+def carregar_dados_gtfs_manual(uploaded_file):
+    try:
+        z = zipfile.ZipFile(uploaded_file)
+        dados = {name: pd.read_csv(z.open(name)) for name in z.namelist() if name.endswith('.txt')}
+        return dados
+    except Exception as e:
+        st.error("Erro ao processar o arquivo GTFS enviado.")
+        return None
 
 st.title("🚌 GTFS Rio de Janeiro - Análise e Visualização")
+
+# Tenta carregar do link
+gtfs = carregar_dados_gtfs(GTFS_URL)
+
+# Caso falhe, permite upload manual
+if not gtfs:
+    st.warning("Erro ao carregar os dados automaticamente. Faça o upload manual do arquivo GTFS (.zip).")
+    uploaded_file = st.file_uploader("📁 Faça o upload do GTFS.zip", type="zip")
+    if uploaded_file:
+        gtfs = carregar_dados_gtfs_manual(uploaded_file)
 
 if gtfs:
     routes = gtfs["routes.txt"]
@@ -91,4 +112,4 @@ if gtfs:
         st.download_button("🔽 Baixar CSV de paradas", csv, nome_arquivo, "text/csv")
 
 else:
-    st.error("Erro ao carregar dados do GTFS.")
+    st.error("Não foi possível carregar dados do GTFS.")
