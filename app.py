@@ -1,65 +1,100 @@
 import streamlit as st
-import folium
-from streamlit_folium import st_folium
 import pandas as pd
-import geopandas as gpd
-from pathlib import Path
 import zipfile
-import shutil
+import io
+import requests
+import pydeck as pdk
 
-st.set_page_config(layout="wide")
-st.title("Itinerários de Ônibus do Município do RJ")
+st.set_page_config(page_title="GTFS Rio - Análise Completa", layout="wide")
 
-GTFS_DIR = Path("gtfs_data")
-GTFS_ZIP = Path("gtfs_data.zip")
+GTFS_URL = "https://dados.mobilidade.rio/gis/gtfs.zip"
 
-def extrair_gtfs(caminho_zip):
-    if GTFS_DIR.exists():
-        shutil.rmtree(GTFS_DIR)
-    with zipfile.ZipFile(caminho_zip, "r") as zip_ref:
-        zip_ref.extractall(GTFS_DIR)
+@st.cache_data
 
-def carregar_dados_gtfs():
-    shapes = pd.read_csv(GTFS_DIR / "shapes.txt")
-    routes = pd.read_csv(GTFS_DIR / "routes.txt")
-    trips = pd.read_csv(GTFS_DIR / "trips.txt")
+def carregar_dados_gtfs(url):
+    response = requests.get(url)
+    if response.status_code != 200:
+        st.error("Erro ao baixar GTFS.")
+        return None
 
-    merged = pd.merge(trips, routes, on="route_id")
-    merged = pd.merge(merged, shapes, on="shape_id")
-    merged.sort_values(by=["shape_id", "shape_pt_sequence"], inplace=True)
+    z = zipfile.ZipFile(io.BytesIO(response.content))
+    dados = {name: pd.read_csv(z.open(name)) for name in z.namelist() if name.endswith('.txt')}
+    return dados
 
-    shapes_grouped = merged.groupby("shape_id")
-    geoms = []
-    nomes = []
-    for shape_id, group in shapes_grouped:
-        coords = list(zip(group["shape_pt_lon"], group["shape_pt_lat"]))
-        geoms.append(coords)
-        nomes.append(group["route_short_name"].iloc[0])
+gtfs = carregar_dados_gtfs(GTFS_URL)
 
-    gdf = gpd.GeoDataFrame({"route_name": nomes, "geometry": [gpd.points_from_xy(*zip(*line)) for line in geoms]})
-    return gdf
+st.title("🚌 GTFS Rio de Janeiro - Análise e Visualização")
 
-# Upload do usuário
-upload_novo = st.checkbox("Deseja enviar um novo arquivo GTFS (.zip)?")
-if upload_novo:
-    uploaded_file = st.file_uploader("Envie o arquivo .ZIP com o GTFS", type=["zip"])
-    if uploaded_file:
-        with open(GTFS_ZIP, "wb") as f:
-            f.write(uploaded_file.read())
-        extrair_gtfs(GTFS_ZIP)
-        st.success("Arquivo GTFS carregado com sucesso.")
-elif GTFS_DIR.exists():
-    st.info("Usando o último arquivo GTFS disponível.")
+if gtfs:
+    routes = gtfs["routes.txt"]
+    trips = gtfs["trips.txt"]
+    shapes = gtfs["shapes.txt"]
+    stops = gtfs["stops.txt"]
+    stop_times = gtfs["stop_times.txt"]
+
+    # Junta trips com routes para mostrar nome das linhas
+    trips_routes = trips.merge(routes, on="route_id")
+
+    # Seleciona dados das linhas
+    linhas = trips_routes[["route_id", "route_short_name", "route_long_name", "trip_id", "shape_id"]].drop_duplicates()
+    linhas["linha_nome"] = linhas["route_short_name"].fillna('') + " - " + linhas["route_long_name"].fillna('')
+
+    # Menu lateral
+    st.sidebar.title("🔍 Filtros")
+    linha_escolhida = st.sidebar.selectbox("Selecione uma linha:", linhas["linha_nome"].unique())
+    linha_dados = linhas[linhas["linha_nome"] == linha_escolhida].iloc[0]
+    shape_id = linha_dados["shape_id"]
+    trip_id = linha_dados["trip_id"]
+
+    st.subheader(f"👉 Linha Selecionada: {linha_escolhida}")
+
+    # Trajeto
+    shape_data = shapes[shapes["shape_id"] == shape_id].sort_values("shape_pt_sequence")
+
+    # Paradas dessa viagem
+    paradas_viagem = stop_times[stop_times["trip_id"] == trip_id].merge(stops, on="stop_id")
+
+    # Mapa
+    if not shape_data.empty:
+        st.pydeck_chart(pdk.Deck(
+            map_style="mapbox://styles/mapbox/light-v9",
+            initial_view_state=pdk.ViewState(
+                latitude=shape_data["shape_pt_lat"].mean(),
+                longitude=shape_data["shape_pt_lon"].mean(),
+                zoom=12,
+                pitch=0,
+            ),
+            layers=[
+                pdk.Layer(
+                    "PathLayer",
+                    data=shape_data,
+                    get_path="[['shape_pt_lon', 'shape_pt_lat']]",
+                    get_color=[0, 100, 250],
+                    width_scale=5,
+                    width_min_pixels=3,
+                ),
+                pdk.Layer(
+                    "ScatterplotLayer",
+                    data=paradas_viagem,
+                    get_position='[stop_lon, stop_lat]',
+                    get_radius=30,
+                    get_fill_color=[255, 0, 0, 160],
+                )
+            ],
+        ))
+
+    st.markdown("### 📅 Horários da viagem selecionada")
+    st.dataframe(paradas_viagem[["stop_name", "arrival_time", "departure_time"]])
+
+    st.markdown("### 📄 Dados da linha")
+    st.dataframe(linhas[linhas["linha_nome"] == linha_escolhida])
+
+    with st.expander("📂 Ver todas as linhas"):
+        st.dataframe(linhas.sort_values("linha_nome"))
+
+    with st.expander("🗂 Exportar dados da linha"):
+        csv = paradas_viagem.to_csv(index=False).encode("utf-8")
+        st.download_button("🔽 Baixar CSV de paradas", csv, f"paradas_{linha_escolhida}.csv", "text/csv")
+
 else:
-    st.warning("Nenhum arquivo GTFS disponível. Envie um para continuar.")
-    st.stop()
-
-# Processamento
-gdf = carregar_dados_gtfs()
-
-# Mapa
-m = folium.Map(location=[-22.9, -43.2], zoom_start=11, tiles="CartoDB Positron")
-for _, row in gdf.iterrows():
-    pontos = [(p.y, p.x) for p in row["geometry"]]
-    folium.PolyLine(locations=pontos, color="blue", weight=2).add_to(m)
-st_folium(m, width=1000, height=600)
+    st.error("Erro ao carregar dados do GTFS.")
