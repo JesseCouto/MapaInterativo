@@ -4,4 +4,3 @@ requests
 pydeck
 protobuf
 gtfs-realtime-bindings
-
